@@ -1,0 +1,10 @@
+{
+	"id": "com.pressdemocrat",
+	"display_name": "The Press Democrat",
+	"site": "https://www.pressdemocrat.com",
+	"icon": "https://static.ew.srp.navigacloud.com/wp-content/uploads/sites/2/2020/09/29043509/cropped-PD_favicon-180x180.png",
+	"item_style": "article",
+	"providesAttachments": true,
+	"check_interval": 300,
+	"version": 1
+}
