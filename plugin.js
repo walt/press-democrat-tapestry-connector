@@ -1,35 +1,117 @@
 function load() {
 	sendRequest("https://www.pressdemocrat.com/")
 	.then((html) => {
-		const script_regex = /<script\s+type="text\/javascript"\s*>\s*window\["feedPdListPda1251"\]\s*=\s*(.*?);<\/script>/;
-		const script_match = html.match(script_regex);
-		const articles = JSON.parse(script_match[1]).articles;
+		const debug = false;
+		const results = [];
 
-		var results = [];
+		const articleRegex = /<article.*?>(.*?)<\/article>/gs;
+		const timestampRegex = /data-timestamp="(\d+)"/;
+		const urlRegex = /href="([^"]+)"/;
+		const titleRegex = /title="([^"]+)"/;
+		const excerptRegex = /<div class="excerpt">(.*?)<\/div>/s;
+		const imageSrcRegex = /src="([^"]+)"/;
+		const imageDataSrcRegex = /data-src="([^"]+)"/;
 
-		for (const article of articles) {
-			const uri = article.href;
-			const date = new Date(article.dates.published);
-			const item = Item.createWithUriDate(uri, date);
-			item.title = article.headline;
-			item.body = '<p>' + article.description + '</p>';
+		let match;
 
-			const name = article.byline.name;
-			const identity = Identity.createWithName(name);
-			item.author = identity;
+		while ((match = articleRegex.exec(html)) !== null) {
+			if (!match[1]) {
+				console.log(match);
+				continue;
+			}
 
-			const image = article.images[0];
-			const media = 'https://imengine.prod.srp.navigacloud.com/?uuid=' + image.uuid + '&type=primary&q=75&width=' + image.width;
-			const attachment = MediaAttachment.createWithUrl(media);
-			attachment.text = image.alt;
-			item.attachments = [attachment];
+			const content = match[1];
 
-			results.push(item);
+			const urlMatch = content.match(urlRegex);
+			const timestampMatch = match[0].match(timestampRegex);
+			const titleMatch = content.match(titleRegex);
+			const excerptMatch = content.match(excerptRegex);
+			const imageSrcMatch = content.match(imageSrcRegex);
+			const imageDataSrcMatch = content.match(imageDataSrcRegex);
+
+			let url = null;
+			let date = null;
+			let title = null;
+			let excerpt = null;
+			let image = null;
+
+			if (urlMatch && urlMatch[1]) {
+				url = urlMatch[1];
+				if (debug) console.log(url);
+			} else {
+				if (debug) console.log("-- URL NOT FOUND --");
+			}
+
+			if (timestampMatch && timestampMatch[1]) {
+				date = new Date(fixTimestamp(timestampMatch[1] * 1000));
+				if (debug) console.log(date);
+			} else {
+				if (debug) console.log("-- DATE NOT FOUND --");
+			}
+
+			if (titleMatch && titleMatch[1]) {
+				title = titleMatch[1];
+				if (debug) console.log(title);
+			} else {
+				if (debug) console.log("-- TITLE NOT FOUND --");
+			}
+
+			if (excerptMatch && excerptMatch[1]) {
+				excerpt = `<p>${excerptMatch[1].trim()}</p>`;
+				if (debug) console.log(excerpt);
+			} else {
+				if (debug) console.log("-- Excerpt not found --");
+			}
+
+			if (imageSrcMatch && imageSrcMatch[1]) {
+				if (!imageSrcMatch[1].startsWith("data:")) {
+					image = imageSrcMatch[1];
+					if (debug) console.log(image);
+				} else {
+					if (imageDataSrcMatch && imageDataSrcMatch[1]) {
+						image = imageDataSrcMatch[1];
+						if (debug) console.log(image);
+					}
+				}
+			}
+			if (debug && !image) console.log("-- Image not found --");
+
+			if (debug) console.log("");
+
+			if (url && date) {
+				const item = Item.createWithUriDate(url, date);
+
+				if (title) item.title = title;
+				if (excerpt) item.body = excerpt;
+
+				if (image) {
+					const attachment = MediaAttachment.createWithUrl(image);
+					item.attachments = [attachment];
+				}
+
+				results.push(item);
+			}
 		}
 
 		processResults(results);
 	})
 	.catch((requestError) => {
-		console.log(requestError);
+		processError(requestError);
 	});
+}
+
+function fixTimestamp(ts) {
+	const wrongDate = new Date(ts);
+	const wallClockStr = wrongDate.toISOString().slice(0, 19);
+
+	const formatter = new Intl.DateTimeFormat("en-US", {
+		timeZone: "America/Los_Angeles",
+		timeZoneName: "shortOffset",
+	});
+	const parts = formatter.formatToParts(wrongDate);
+	const offsetStr = parts.find(p => p.type === "timeZoneName").value;
+	const offsetHours = parseInt(offsetStr.replace("GMT", ""), 10);
+
+	const correctedTs = wrongDate.getTime() - offsetHours * 3600 * 1000;
+	return new Date(correctedTs);
 }
